@@ -101,7 +101,7 @@ The suite runs without Ollama or ChromaDB: an in-memory stand-in implements the 
 ## Known limitations
 
 - Single-user local demo: no authentication on chat or upload, and the cart is global rather than per session.
-- On some Windows builds ChromaDB's native bindings crash on first write; the tests don't need Chroma, and CI runs on Linux.
+- **Windows:** ChromaDB needs a current Microsoft Visual C++ 2015–2022 Redistributable; with only the 2015 runtime it crashes on the first write. The tests don't need Chroma.
 
 ## Next steps
 
