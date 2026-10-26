@@ -1,0 +1,7 @@
+__pycache__/
+.venv/
+data/chroma/
+data/app.db
+data/products.json
+*.pyc
+.DS_Store
