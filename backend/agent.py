@@ -51,8 +51,8 @@ def run(question: str, history: list[dict], passages: list[dict]) -> dict:
     """history: [{"role": "user"|"assistant", "content": str}, ...] (most recent last)."""
     messages = [{"role": "system", "content": SYSTEM}]
     for turn in history[-6:]:
-        if turn.get("role") in ("user", "assistant") and turn.get("content"):
-            messages.append({"role": turn["role"], "content": turn["content"]})
+        if turn.get("role") in ("user", "assistant") and isinstance(turn.get("content"), str):
+            messages.append({"role": turn["role"], "content": turn["content"][:2000]})
     messages.append(
         {
             "role": "user",

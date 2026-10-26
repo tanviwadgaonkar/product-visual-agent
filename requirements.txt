@@ -1,6 +1,6 @@
-fastapi>=0.110
-uvicorn[standard]>=0.29
-chromadb>=0.5
-ollama>=0.4
-pypdf>=4.0
+fastapi>=0.110,<1
+uvicorn[standard]>=0.29,<1
+chromadb>=0.5,<2
+ollama>=0.4,<1
+pypdf>=4.0,<7
 python-multipart>=0.0.9

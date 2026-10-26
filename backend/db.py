@@ -1,9 +1,14 @@
 """SQLite store for the agent's side-effects: demo bookings and cart items."""
+import os
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
-DB_PATH = Path(__file__).resolve().parent.parent / "data" / "app.db"
+DB_PATH = Path(os.getenv("PVA_DATA_DIR", Path(__file__).resolve().parent.parent / "data")) / "app.db"
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 def _conn() -> sqlite3.Connection:
@@ -35,7 +40,7 @@ def add_lead(name: str, email: str, product_id: str | None) -> int:
     with _conn() as c:
         cur = c.execute(
             "INSERT INTO leads (name, email, product_id, created_at) VALUES (?, ?, ?, ?)",
-            (name.strip(), email.strip(), product_id, datetime.utcnow().isoformat(timespec="seconds")),
+            (name.strip(), email.strip(), product_id, _now()),
         )
         return cur.lastrowid
 
@@ -44,7 +49,7 @@ def add_cart_item(product_id: str) -> int:
     with _conn() as c:
         cur = c.execute(
             "INSERT INTO cart (product_id, created_at) VALUES (?, ?)",
-            (product_id, datetime.utcnow().isoformat(timespec="seconds")),
+            (product_id, _now()),
         )
         return cur.lastrowid
 

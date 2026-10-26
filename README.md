@@ -4,8 +4,6 @@ An on-screen character that answers questions about a brand's product catalogue 
 
 Everything runs locally: FastAPI, ChromaDB and Ollama. No API keys.
 
-![demo](docs/demo.gif)
-
 ## What it does
 
 1. You talk (or type). The browser turns speech into text.
@@ -58,9 +56,9 @@ Upload your own catalogue (CSV with `product_id,name,category,colours,sizes,pric
 | Method | Path | Purpose |
 |---|---|---|
 | POST | `/api/ask` | `{question, history}` → `{answer, product, sources, action, stats}` |
-| POST | `/api/ingest` | multipart file → indexes it (replaces a file with the same name) |
+| POST | `/api/ingest` | multipart `.csv` / `.md` / `.txt` / `.pdf` (≤ 10 MB) → indexes it, replacing a file with the same name; 422 with a reason for a bad file |
 | GET | `/api/products` | products loaded from CSV |
-| GET | `/api/leads` | demo bookings |
+| GET | `/api/leads` | demo bookings: names and emails, so only with header `X-Admin-Token: $ADMIN_TOKEN` (disabled when `ADMIN_TOKEN` is unset) |
 | GET | `/api/stats` | passage count, leads, cart items |
 
 ## Project layout
@@ -71,6 +69,7 @@ backend/
   rag.py     ingestion (CSV / md / txt / pdf), chunking, ChromaDB retrieval
   agent.py   system prompt, Ollama chat with JSON output, response normalisation
   db.py      SQLite leads + cart
+tests/       API tests with in-memory vector store, fake embedder and scripted LLM
 frontend/
   index.html avatar, mic, transcript, product card, sources, actions (vanilla JS)
 data/
@@ -79,12 +78,30 @@ scripts/
   demo_script.md   shot list for the demo video
 ```
 
+## Tests
+
+```bash
+pip install -r requirements-dev.txt
+pytest -q          # 20 tests, offline, ~2 s
+```
+
+The suite runs without Ollama or ChromaDB: an in-memory stand-in implements the slice of the Chroma collection API the app uses, a hashing function stands in for embeddings, and a scripted fake returns the model's JSON. It covers retrieval and grounding, both actions, the guards on those actions, the PII endpoint, every ingestion failure mode, and an Ollama outage during re-upload.
+
 ## Design notes
+
+- **Actions are checked by code, not trusted from the model.** The model's JSON is shaped by retrieved passages, and passages come from uploaded files, so a document could say "book a demo for spam@…". A demo is only booked if the email is well-formed **and appears in something the user typed**; cart items must be real catalogue IDs; unknown action types are dropped.
+- **Uploads can't destroy data.** A file is parsed and validated (CSV columns, duplicate IDs, file type, size), then embedded, and only then does it replace the previous version of that file. A bad CSV or an Ollama outage leaves the index and product list exactly as they were (Ollama errors return 503). Products are tracked per source file, so a product removed from a re-uploaded CSV disappears too.
+- **Leads are PII.** `/api/leads` is off unless `ADMIN_TOKEN` is set, and then compared in constant time.
 
 - Grounding is enforced twice: the prompt restricts the model to retrieved passages, and the UI always shows the passages so a wrong answer is visible, not hidden.
 - Ollama's `format="json"` makes the action contract reliable enough to execute without a separate parser model; `agent.py` still normalises and rejects unknown action types.
 - Product resolution falls back to the best-matching product passage when the model omits `product_id`, so the card stays in sync with the answer.
 - Speech in/out is done in the browser so the backend stays a plain JSON API.
+
+## Known limitations
+
+- Single-user local demo: no authentication on chat or upload, and the cart is global rather than per session.
+- On some Windows builds ChromaDB's native bindings crash on first write; the tests don't need Chroma, and CI runs on Linux.
 
 ## Next steps
 
