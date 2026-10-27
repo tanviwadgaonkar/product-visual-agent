@@ -1,0 +1,44 @@
+name: Grounded Q&A smoke test
+
+# Runs the real pipeline on a GitHub runner: CLIP query encoding + a small
+# local LLM (Ollama llama3.2:3b) answering from retrieved products. Reports
+# how many answers were grounded and how many citations had to be dropped.
+on:
+  workflow_dispatch:
+  push:
+    paths: ["backend/qa.py", "scripts/qa_smoke.py", ".github/workflows/qa-smoke.yml"]
+
+# Least privilege: these jobs only read the repository.
+permissions:
+  contents: read
+
+jobs:
+  ask:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      OLLAMA_MODEL: llama3.2:3b
+      PVA_CLIP: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install Ollama and pull the model
+        run: |
+          curl -fsSL https://ollama.com/install.sh | sh
+          ollama serve > /tmp/ollama.log 2>&1 &
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:11434/api/tags && break; sleep 2; done
+          ollama pull "$OLLAMA_MODEL"
+      - name: Install Python dependencies (CPU torch)
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements-ml.txt
+      - name: Ask questions
+        run: python scripts/qa_smoke.py | tee qa_smoke.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qa-smoke
+          path: qa_smoke.md

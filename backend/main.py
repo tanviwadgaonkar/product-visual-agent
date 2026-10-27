@@ -3,37 +3,90 @@
 Run:  uvicorn backend.main:app --reload --port 8000
 Open: http://localhost:8000
 """
+import logging
+import os
+import re
+import secrets
+from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, UploadFile, File
-from fastapi.responses import FileResponse
+import httpx
+import ollama
+from fastapi import FastAPI, File, Header, HTTPException, Request, UploadFile
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
-from backend import agent, db, rag
+from backend import agent, api_v2, db, rag
+from backend.catalog import ABO_DIR
 
 ROOT = Path(__file__).resolve().parent.parent
 FRONTEND = ROOT / "frontend"
-DATA = ROOT / "data"
+SEED_DATA = ROOT / "data"
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+log = logging.getLogger("pva")
+EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+(\.[\w-]+)+")
 
-app = FastAPI(title="Product Visual Agent", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    db.init_db()
+    # Seed the document index with the bundled sample data on first run. It
+    # needs Ollama; without it the catalogue API (/api/v2) must still start.
+    try:
+        if rag.count() == 0:
+            for f in ("catalogue.csv", "store_faq.md"):
+                p = SEED_DATA / f
+                if p.exists():
+                    rag.ingest_path(p)
+    except (ConnectionError, httpx.HTTPError, ollama.ResponseError) as exc:
+        log.warning("Document index not seeded (Ollama unavailable): %s", exc)
+    yield
+
+
+app = FastAPI(title="Product Visual Agent", version="0.3.0", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=FRONTEND), name="static")
+app.mount("/images", StaticFiles(directory=ABO_DIR / "images"), name="images")
+app.include_router(api_v2.router)
+WEB_DIST = ROOT / "web" / "dist"
+if WEB_DIST.exists():  # the React app, after `npm run build` in web/
+    app.mount("/app", StaticFiles(directory=WEB_DIST, html=True), name="app")
+app.add_exception_handler(api_v2.APIError, api_v2.api_error_handler)
+app.add_exception_handler(RequestValidationError, api_v2.validation_handler)
+
+
+@app.exception_handler(ConnectionError)
+@app.exception_handler(httpx.HTTPError)
+@app.exception_handler(ollama.ResponseError)
+async def model_unavailable(request: Request, exc: Exception) -> JSONResponse:
+    """Ollama down or missing a model: an upstream failure (503), not a server bug."""
+    return JSONResponse(status_code=503, content={"detail": f"Local model unavailable: {exc}. Is Ollama running?"})
+
+
+class Turn(BaseModel):
+    role: str
+    content: str
 
 
 class AskRequest(BaseModel):
-    question: str
-    history: list[dict] = []
+    question: str = Field(max_length=1000)
+    history: list[Turn] = Field(default_factory=list)
+
+    @field_validator("history")
+    @classmethod
+    def recent_turns_only(cls, turns: list[Turn]) -> list[Turn]:
+        # The browser keeps the whole conversation; only recent turns matter
+        # (the agent uses the last 6), so trim instead of rejecting.
+        return turns[-20:]
 
 
-@app.on_event("startup")
-def startup() -> None:
-    db.init_db()
-    # Seed the index with the bundled sample data on first run.
-    if rag.count() == 0:
-        for f in ("catalogue.csv", "store_faq.md"):
-            p = DATA / f
-            if p.exists():
-                rag.ingest_path(p)
+def _public(product: dict | None) -> dict | None:
+    return {k: v for k, v in product.items() if not k.startswith("_")} if product else None
+
+
+def _user_text(question: str, history: list[Turn]) -> str:
+    return "\n".join([t.content for t in history if t.role == "user"] + [question])
 
 
 @app.get("/")
@@ -43,15 +96,20 @@ def index() -> FileResponse:
 
 @app.post("/api/ingest")
 async def ingest(file: UploadFile = File(...)) -> dict:
-    raw = await file.read()
+    raw = await file.read(MAX_UPLOAD_BYTES + 1)
     if not raw:
         raise HTTPException(400, "Empty file")
-    return rag.ingest_bytes(file.filename, raw)
+    if len(raw) > MAX_UPLOAD_BYTES:
+        raise HTTPException(413, "File larger than 10 MB")
+    try:
+        return rag.ingest_bytes(file.filename or "upload", raw)
+    except rag.IngestError as exc:
+        raise HTTPException(422, str(exc)) from exc
 
 
 @app.get("/api/products")
 def products() -> dict:
-    return {"products": list(rag.load_products().values())}
+    return {"products": [_public(p) for p in rag.load_products().values()]}
 
 
 @app.post("/api/ask")
@@ -61,7 +119,7 @@ def ask(req: AskRequest) -> dict:
         raise HTTPException(400, "Empty question")
 
     passages = rag.retrieve(q, k=4)
-    result = agent.run(q, req.history, passages)
+    result = agent.run(q, [t.model_dump() for t in req.history], passages)
 
     products = rag.load_products()
     pid = result["product_id"] if result["product_id"] in products else None
@@ -72,9 +130,16 @@ def ask(req: AskRequest) -> dict:
     action_result = None
     action = result["action"]
     if action:
-        if action["type"] == "book_demo" and action.get("name") and action.get("email"):
-            lead_id = db.add_lead(action["name"], action["email"], action.get("product_id") or pid)
-            action_result = {"type": "book_demo", "id": lead_id, "name": action["name"], "email": action["email"], "product_id": action.get("product_id") or pid}
+        if action["type"] == "book_demo":
+            name = str(action.get("name") or "").strip()
+            email = str(action.get("email") or "").strip()
+            # The model's output is shaped by retrieved passages, which come from
+            # uploaded files. Only book with an email the *user* actually typed,
+            # so injected document text can't create leads.
+            if name and EMAIL_RE.fullmatch(email) and email.lower() in _user_text(q, req.history).lower():
+                target = action.get("product_id") if action.get("product_id") in products else pid
+                lead_id = db.add_lead(name, email, target)
+                action_result = {"type": "book_demo", "id": lead_id, "name": name, "email": email, "product_id": target}
         elif action["type"] == "add_to_cart":
             target = action.get("product_id") if action.get("product_id") in products else pid
             if target:
@@ -83,7 +148,7 @@ def ask(req: AskRequest) -> dict:
 
     return {
         "answer": result["answer"],
-        "product": products.get(pid),
+        "product": _public(products.get(pid)),
         "sources": [{"source": p["source"], "product_id": p["product_id"], "text": p["text"][:400], "score": p["score"]} for p in passages],
         "action": action_result,
         "stats": db.stats(),
@@ -91,7 +156,11 @@ def ask(req: AskRequest) -> dict:
 
 
 @app.get("/api/leads")
-def leads() -> dict:
+def leads(x_admin_token: str | None = Header(default=None)) -> dict:
+    """Names and emails: only with the ADMIN_TOKEN set on the server."""
+    expected = os.getenv("ADMIN_TOKEN")
+    if not expected or not x_admin_token or not secrets.compare_digest(x_admin_token, expected):
+        raise HTTPException(403, "Set ADMIN_TOKEN on the server and send it as X-Admin-Token")
     return {"leads": db.list_leads()}
 
 
