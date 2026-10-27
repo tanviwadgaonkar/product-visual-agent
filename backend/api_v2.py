@@ -10,6 +10,7 @@ import time
 import httpx
 import ollama
 from fastapi import APIRouter, File, Query, Request, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -184,7 +185,8 @@ async def search_by_image(file: UploadFile = File(...), limit: int = Query(8, ge
     if index is None or enc is None:
         raise APIError(503, "image_search_unavailable", "Image search needs the CLIP encoder (PVA_CLIP=1) and embeddings")
     try:
-        vec = enc.encode_image(raw)
+        # CLIP inference is CPU-bound (seconds); on the event loop it would stall every other request.
+        vec = await run_in_threadpool(enc.encode_image, raw)
     except Exception as exc:  # PIL raises several unrelated types for corrupt files
         raise APIError(422, "invalid_image", "Could not decode the image") from exc
     catalog = default_catalog()

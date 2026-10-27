@@ -82,7 +82,7 @@ Optional:
 ## Tests and CI
 
 ```bash
-pip install -r requirements-dev.txt && pytest -q       # 57 tests, ~3 s, no models, no network
+pip install -r requirements-dev.txt && pytest -q       # 58 tests, ~3 s, no models, no network
 cd web && npm test                                      # vitest: API client, citation parsing
 ```
 

@@ -295,3 +295,12 @@ def test_facets_merge_case_variants(catalog):
     assert len(colors) == len(set(colors))
     pink = next(f for f in catalog.facets()["color"] if f["value"].lower() == "pink")
     assert pink["count"] == sum(1 for p in catalog.products.values() if (p.color or "").lower() == "pink")
+
+
+def test_filters_apply_before_dense_truncation(catalog, fake_index):
+    # A query that matches no lamp by keyword, filtered to lamps: the dense list
+    # must be filtered first, so all 30 lamps are still rankable (was: only the
+    # few lamps that happened to be in the unfiltered top 40).
+    res = search(catalog, "red leather handbag", category="Lamps", mode="semantic", page_size=100,
+                 index=fake_index, encoder=FakeEncoder())
+    assert res.total == 30 and all(i["category"] == "Lamps" for i in res.items)

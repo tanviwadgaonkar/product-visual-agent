@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import io
 import os
+import threading
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -24,6 +25,7 @@ from backend.catalog import ABO_DIR
 
 CLIP_MODEL = os.getenv("PVA_CLIP_MODEL", "clip-ViT-B-32")
 RRF_K = 60
+MAX_IMAGE_PIXELS = 25_000_000
 
 
 @dataclass
@@ -96,21 +98,27 @@ class ClipEncoder(Encoder):  # pragma: no cover - needs torch; exercised in the 
     def encode_image(self, raw: bytes) -> np.ndarray:
         from PIL import Image
 
-        img = Image.open(io.BytesIO(raw)).convert("RGB")
+        img = Image.open(io.BytesIO(raw))
+        if img.width * img.height > MAX_IMAGE_PIXELS:  # a small file can declare huge dimensions
+            raise ValueError(f"image is {img.width}x{img.height}; limit is {MAX_IMAGE_PIXELS} pixels")
+        img = img.convert("RGB")
         return self.model.encode([img], normalize_embeddings=True)[0]
 
 
 _encoder: Encoder | None = None
 _encoder_loaded = False
+_encoder_lock = threading.Lock()
 
 
 def encoder() -> Encoder | None:
-    """The CLIP encoder if enabled (PVA_CLIP=1), loaded once on first use."""
+    """The CLIP encoder if enabled (PVA_CLIP=1), loaded once on first use (thread-safe: requests run in a pool)."""
     global _encoder, _encoder_loaded
     if not _encoder_loaded:
-        _encoder_loaded = True
-        if os.getenv("PVA_CLIP") == "1":
-            _encoder = ClipEncoder()
+        with _encoder_lock:
+            if not _encoder_loaded:
+                if os.getenv("PVA_CLIP") == "1":
+                    _encoder = ClipEncoder()
+                _encoder_loaded = True
     return _encoder
 
 

@@ -46,6 +46,11 @@ def search(
     q = q.strip()
     semantic_ok = index is not None and encoder is not None
 
+    filters = {"category": category, "brand": brand, "color": color}
+
+    def keep(pid: str) -> bool:
+        return pid in catalog.products and catalog.matches(catalog.products[pid], filters)
+
     if not q:
         used = "browse"
         ranked = [(pid, 0.0) for pid in sorted(catalog.products, key=lambda i: catalog.products[i].title.lower())]
@@ -58,11 +63,11 @@ def search(
         if mode == "keyword":
             ranked = catalog.bm25(q)
         else:
-            dense = index.by_text_vector(encoder.encode_text(q))[:DENSE_TOP_N]
+            # Filter before truncating: otherwise a filter can leave almost nothing of the top N.
+            dense = [h for h in index.by_text_vector(encoder.encode_text(q)) if keep(h[0])][:DENSE_TOP_N]
             ranked = dense if mode == "semantic" else vectors.rrf(catalog.bm25(q), dense)
 
-    filters = {"category": category, "brand": brand, "color": color}
-    hits = [(pid, s) for pid, s in ranked if pid in catalog.products and catalog.matches(catalog.products[pid], filters)]
+    hits = [(pid, s) for pid, s in ranked if keep(pid)]
 
     if sort != "relevance":
         hits.sort(key=lambda h: catalog.products[h[0]].title.lower(), reverse=sort == "title_desc")
