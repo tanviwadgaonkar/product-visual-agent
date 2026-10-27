@@ -244,3 +244,47 @@ def test_real_vectors_similar_products_share_category(catalog):
     lamp = next(p.id for p in catalog.products.values() if p.category == "Lamps")
     top = [catalog.products[pid].category for pid, _ in index.similar_to(lamp)[:5]]
     assert top.count("Lamps") >= 3
+
+
+# ---------- grounded Q&A ----------
+
+def test_ask_cites_only_retrieved_products(client, llm, without_vectors, catalog):
+    retrieved = client.get("/api/v2/products", params={"q": "table lamp", "page_size": 5}).json()["items"]
+    good, fake = retrieved[0]["id"], "B0FAKE0000"
+    llm.reply = f'{{"answer": "Try [{good}] or [{fake}]."}}'
+    body = client.post("/api/v2/ask", json={"question": "table lamp"}).json()
+    assert body["grounded"] is True
+    assert [c["id"] for c in body["citations"]] == [good]
+    assert body["dropped_citations"] == [fake] and fake not in body["answer"]
+    assert [r["id"] for r in body["retrieved"]] == [r["id"] for r in retrieved]
+    # the model only ever saw the retrieved products
+    prompt = llm.calls[-1][-1]["content"]
+    assert all(f"[{r['id']}]" in prompt for r in retrieved)
+
+
+def test_ask_without_citations_is_ungrounded(client, llm, without_vectors):
+    llm.reply = '{"answer": "Lamps are great."}'
+    body = client.post("/api/v2/ask", json={"question": "lamp"}).json()
+    assert body["grounded"] is False and body["citations"] == []
+
+
+def test_ask_with_no_matches_skips_the_llm(client, llm, without_vectors):
+    calls = len(llm.calls)
+    body = client.post("/api/v2/ask", json={"question": "zzqxv"}).json()
+    assert body["grounded"] is False and len(llm.calls) == calls
+
+
+def test_ask_llm_down_is_503(client, monkeypatch, without_vectors):
+    from backend import qa
+
+    def down(**kwargs):
+        raise ConnectionError("Failed to connect to Ollama")
+
+    monkeypatch.setattr(qa.ollama, "chat", down)
+    r = client.post("/api/v2/ask", json={"question": "lamp"})
+    assert r.status_code == 503 and r.json()["error"]["code"] == "llm_unavailable"
+
+
+def test_ask_validates_input(client):
+    assert client.post("/api/v2/ask", json={"question": ""}).json()["error"]["code"] == "invalid_request"
+    assert client.post("/api/v2/ask", json={"question": "x" * 501}).status_code == 422

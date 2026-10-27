@@ -7,12 +7,14 @@ from __future__ import annotations
 import logging
 import time
 
+import httpx
+import ollama
 from fastapi import APIRouter, File, Query, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from backend import vectors
+from backend import qa, vectors
 from backend.catalog import default_catalog
 from backend.search import Mode, SearchUnavailable, Sort, compare, search
 
@@ -87,6 +89,20 @@ class CompareOut(BaseModel):
     products: list[ProductOut]
     attributes: list[CompareRow]
     shared_features: list[str]
+
+
+class AskIn(BaseModel):
+    question: str = Field(min_length=1, max_length=500)
+    category: str | None = Field(None, max_length=50)
+
+
+class AskOut(BaseModel):
+    answer: str
+    citations: list[ProductOut]
+    grounded: bool
+    dropped_citations: list[str]
+    retrieved: list[ScoredProduct]
+    retrieval_mode: str
 
 
 class Capabilities(BaseModel):
@@ -184,3 +200,21 @@ def compare_products(ids: str = Query(..., description="2 to 4 comma-separated p
     for pid in wanted:
         _product_or_404(pid)
     return compare(default_catalog(), wanted)
+
+
+@router.post("/ask", response_model=AskOut)
+def ask(body: AskIn) -> dict:
+    """Retrieve the 5 best-matching products, then answer only from them, with checked citations."""
+    question = body.question.strip()
+    if not question:
+        raise APIError(422, "invalid_request", "Question is empty")
+    catalog = default_catalog()
+    result = search(catalog, question, category=body.category, page_size=5,
+                    index=vectors.default_index(), encoder=vectors.encoder())
+    try:
+        out = qa.answer(question, [catalog.products[i["id"]] for i in result.items], catalog)
+    except (ConnectionError, httpx.HTTPError, ollama.ResponseError) as exc:
+        raise APIError(503, "llm_unavailable", f"The language model is unavailable: {exc}") from exc
+    log.info("ask q=%r retrieved=%d grounded=%s dropped=%d", question, len(result.items), out["grounded"],
+             len(out["dropped_citations"]))
+    return {**out, "retrieved": result.items, "retrieval_mode": result.mode}
