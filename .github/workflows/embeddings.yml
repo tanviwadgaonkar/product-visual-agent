@@ -38,6 +38,7 @@ jobs:
                   print(q, "->", r["mode"], [i["title"][:50] for i in r["items"]])
           PY
       - uses: actions/upload-artifact@v4
+        if: always()  # keep the vectors even if the smoke test fails
         with:
           name: clip-embeddings
           path: |

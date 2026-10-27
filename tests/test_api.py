@@ -166,3 +166,24 @@ def test_ollama_down_during_reupload_keeps_old_index(client, monkeypatch):
     monkeypatch.setattr(rag, "embed", hash_embed)
     assert client.get("/api/stats").json()["indexed_chunks"] == before
     assert client.get("/api/products").json() == products_before
+
+
+def test_app_starts_without_ollama(tmp_path, monkeypatch, llm):
+    """Seeding the document index needs Ollama; the catalogue API must not."""
+    from fastapi.testclient import TestClient
+
+    from backend import db, main, rag
+    from tests.conftest import FakeCollection
+
+    def ollama_down(texts):
+        raise ConnectionError("Failed to connect to Ollama")
+
+    monkeypatch.setattr(rag, "PRODUCTS_JSON", tmp_path / "products.json")
+    monkeypatch.setattr(db, "DB_PATH", tmp_path / "app.db")
+    monkeypatch.setattr(rag, "embed", ollama_down)
+    rag.set_collection(FakeCollection())
+    try:
+        with TestClient(main.app) as c:
+            assert c.get("/api/v2/products", params={"q": "lamp"}).status_code == 200
+    finally:
+        rag.set_collection(None)

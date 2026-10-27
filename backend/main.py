@@ -3,6 +3,7 @@
 Run:  uvicorn backend.main:app --reload --port 8000
 Open: http://localhost:8000
 """
+import logging
 import os
 import re
 import secrets
@@ -24,18 +25,23 @@ ROOT = Path(__file__).resolve().parent.parent
 FRONTEND = ROOT / "frontend"
 SEED_DATA = ROOT / "data"
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+log = logging.getLogger("pva")
 EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+(\.[\w-]+)+")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     db.init_db()
-    # Seed the index with the bundled sample data on first run.
-    if rag.count() == 0:
-        for f in ("catalogue.csv", "store_faq.md"):
-            p = SEED_DATA / f
-            if p.exists():
-                rag.ingest_path(p)
+    # Seed the document index with the bundled sample data on first run. It
+    # needs Ollama; without it the catalogue API (/api/v2) must still start.
+    try:
+        if rag.count() == 0:
+            for f in ("catalogue.csv", "store_faq.md"):
+                p = SEED_DATA / f
+                if p.exists():
+                    rag.ingest_path(p)
+    except (ConnectionError, httpx.HTTPError, ollama.ResponseError) as exc:
+        log.warning("Document index not seeded (Ollama unavailable): %s", exc)
     yield
 
 
