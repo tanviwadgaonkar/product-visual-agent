@@ -1,0 +1,24 @@
+{
+  "products": 360,
+  "categories": 12,
+  "image_to_image_precision_at_5": 0.8556,
+  "text_to_image_precision_at_10": 0.9,
+  "text_to_image_precision_at_10_by_category": {
+    "Boots": 0.5,
+    "Chairs": 1.0,
+    "Handbags": 1.0,
+    "Hats": 1.0,
+    "Lamps": 1.0,
+    "Rings": 1.0,
+    "Rugs": 1.0,
+    "Sandals": 0.8,
+    "Shoes": 0.5,
+    "Sofas": 1.0,
+    "Tables": 1.0,
+    "Wall art": 1.0
+  },
+  "chance_level": 0.0833,
+  "model": "clip-ViT-B-32",
+  "dim": 512,
+  "encode_seconds": 15.4
+}

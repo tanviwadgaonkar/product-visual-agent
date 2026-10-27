@@ -223,3 +223,24 @@ def test_embedding_eval_metrics_on_synthetic_clusters():
     assert report["image_to_image_precision_at_5"] == 1.0
     assert report["text_to_image_precision_at_10_by_category"] == {"Lamps": 0.6, "Rugs": 0.6}  # only 6 of 10 can match
     assert report["chance_level"] == 0.5
+
+
+# ---------- committed CLIP vectors (from the embeddings workflow) ----------
+
+def test_committed_embeddings_match_catalogue(catalog):
+    index = vectors.load_index()
+    if index is None:
+        pytest.skip("data/abo/embeddings.npz not generated")
+    assert sorted(index.ids) == sorted(catalog.products)
+    assert index.image.shape == index.text.shape == (len(catalog), 512)
+    norms = np.linalg.norm(index.image, axis=1)
+    assert np.allclose(norms, 1.0, atol=1e-2)  # stored as float16, so not exact
+
+
+def test_real_vectors_similar_products_share_category(catalog):
+    index = vectors.load_index()
+    if index is None:
+        pytest.skip("data/abo/embeddings.npz not generated")
+    lamp = next(p.id for p in catalog.products.values() if p.category == "Lamps")
+    top = [catalog.products[pid].category for pid, _ in index.similar_to(lamp)[:5]]
+    assert top.count("Lamps") >= 3
