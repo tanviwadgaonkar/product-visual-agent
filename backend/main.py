@@ -12,11 +12,13 @@ from pathlib import Path
 import httpx
 import ollama
 from fastapi import FastAPI, File, Header, HTTPException, Request, UploadFile
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 
-from backend import agent, db, rag
+from backend import agent, api_v2, db, rag
+from backend.catalog import ABO_DIR
 
 ROOT = Path(__file__).resolve().parent.parent
 FRONTEND = ROOT / "frontend"
@@ -37,8 +39,12 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Product Visual Agent", version="0.2.0", lifespan=lifespan)
+app = FastAPI(title="Product Visual Agent", version="0.3.0", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=FRONTEND), name="static")
+app.mount("/images", StaticFiles(directory=ABO_DIR / "images"), name="images")
+app.include_router(api_v2.router)
+app.add_exception_handler(api_v2.APIError, api_v2.api_error_handler)
+app.add_exception_handler(RequestValidationError, api_v2.validation_handler)
 
 
 @app.exception_handler(ConnectionError)

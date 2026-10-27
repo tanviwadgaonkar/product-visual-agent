@@ -1,0 +1,45 @@
+name: CLIP embeddings
+
+# Heavy job: computes data/abo/embeddings.npz and embedding_eval.json with CLIP
+# on a GitHub runner and uploads them as an artifact to review and commit.
+on:
+  workflow_dispatch:
+  push:
+    paths: ["data/abo/products.json", "scripts/embed_catalog.py", ".github/workflows/embeddings.yml"]
+
+jobs:
+  embed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install CPU-only torch, then the ML requirements
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements-ml.txt
+      - run: python scripts/embed_catalog.py
+      - name: Smoke-test the API with the real encoder
+        env:
+          PVA_CLIP: "1"
+        run: |
+          pip install pytest httpx
+          python - <<'PY'
+          from fastapi.testclient import TestClient
+          from backend.main import app
+          with TestClient(app) as c:
+              cap = c.get("/api/v2/capabilities").json()
+              assert cap["semantic_search"] and cap["similar_products"], cap
+              for q in ["red leather handbag", "wooden dining table", "table lamp"]:
+                  r = c.get("/api/v2/products", params={"q": q, "page_size": 3}).json()
+                  print(q, "->", r["mode"], [i["title"][:50] for i in r["items"]])
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: clip-embeddings
+          path: |
+            data/abo/embeddings.npz
+            data/abo/embedding_eval.json

@@ -1,0 +1,5 @@
+# Optional: CLIP query encoding (semantic + image search) and scripts/embed_catalog.py.
+# Heavy (torch). Not needed for keyword search, similar products or the tests.
+-r requirements.txt
+sentence-transformers>=3,<6
+pillow>=10

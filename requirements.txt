@@ -4,3 +4,4 @@ chromadb>=0.5,<2
 ollama>=0.4,<1
 pypdf>=4.0,<7
 python-multipart>=0.0.9
+numpy>=1.26,<3
