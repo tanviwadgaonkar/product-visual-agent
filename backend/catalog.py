@@ -141,8 +141,15 @@ class Catalog:
         pool = [self.products[i] for i in ids] if ids is not None else list(self.products.values())
         out = {}
         for name in FACETS:
-            counts = Counter(getattr(p, name) for p in pool if getattr(p, name))
-            out[name] = [{"value": v, "count": c} for v, c in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))]
+            # Group case variants ("PINK", "Pink"); filters already match case-insensitively.
+            # Show the most common spelling of each value.
+            spellings: dict[str, Counter] = {}
+            for p in pool:
+                v = getattr(p, name)
+                if v:
+                    spellings.setdefault(v.lower(), Counter())[v] += 1
+            rows = [(c.most_common(1)[0][0], sum(c.values())) for c in spellings.values()]
+            out[name] = [{"value": v, "count": n} for v, n in sorted(rows, key=lambda r: (-r[1], r[0]))]
         return out
 
 

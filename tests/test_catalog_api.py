@@ -288,3 +288,10 @@ def test_ask_llm_down_is_503(client, monkeypatch, without_vectors):
 def test_ask_validates_input(client):
     assert client.post("/api/v2/ask", json={"question": ""}).json()["error"]["code"] == "invalid_request"
     assert client.post("/api/v2/ask", json={"question": "x" * 501}).status_code == 422
+
+
+def test_facets_merge_case_variants(catalog):
+    colors = [f["value"].lower() for f in catalog.facets()["color"]]
+    assert len(colors) == len(set(colors))
+    pink = next(f for f in catalog.facets()["color"] if f["value"].lower() == "pink")
+    assert pink["count"] == sum(1 for p in catalog.products.values() if (p.color or "").lower() == "pink")
