@@ -38,7 +38,17 @@ flowchart LR
 
 Per category, text → image is 1.0 for 9 of 12 categories, Sandals 0.8, and **Boots 0.5 and Shoes 0.5**: the two footwear categories are the weak spot. The full report is in [`data/abo/embedding_eval.json`](data/abo/embedding_eval.json). This is a category-level sanity check, not a relevance benchmark with human judgements.
 
-**Grounded Q&A with a real model.** <!-- QA_RESULTS -->
+**Grounded Q&A with a real model.** [Run 40498107845](https://github.com/tanviwadgaonkar/product-visual-agent/actions/runs/40498107845): CLIP hybrid retrieval + Ollama `llama3.2:3b` on a CPU runner, six fixed questions ([`scripts/qa_smoke.py`](scripts/qa_smoke.py)):
+
+| | Result |
+|---|---|
+| In-catalogue questions grounded (cited only retrieved products) | 5 / 5 |
+| Answered in prose (not bare IDs) | 5 / 5 |
+| "Do you sell laptops?" answered without citing anything | yes: *"We don't carry that."* |
+| Invented citations removed | 0 |
+| Latency per answer (CPU runner) | 20–42 s |
+
+I checked the answers by hand against the product data. The dimensions and weight limits quoted for the dining tables are in those products' feature lists. One relevance slip: for "I need a red handbag" the model offered the red Flavia bag and also the *pink* one. Six questions are a smoke test, not an evaluation; the earlier run with `llama3.2:1b` scored worse (bare IDs, cited a product for laptops; see Limitations).
 
 ## Features
 
