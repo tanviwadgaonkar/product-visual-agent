@@ -2,6 +2,8 @@
 
 Multimodal product search and grounded Q&A over **360 real products** from the [Amazon Berkeley Objects](https://amazon-berkeley-objects.s3.amazonaws.com/index.html) dataset (CC BY 4.0). Search by words or by photo, browse visually similar items, compare products side by side, and ask questions that are answered only from retrieved products, with every citation checked in code.
 
+**Status:** implemented and tested **with mocks**: 58 tests on the real catalogue use stand-in vectors and a scripted LLM. CLIP retrieval is validated with the real model in CI. Grounded Q&A was checked with a real LLM (`llama3.2:3b`) on 6 questions in CI. Not deployed.
+
 FastAPI · BM25 + CLIP hybrid retrieval (reciprocal rank fusion) · React + TypeScript + Tailwind · Ollama · GitHub Actions for everything heavy
 
 ![Search](docs/screenshots/search.png)
