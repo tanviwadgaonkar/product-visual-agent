@@ -1,7 +1,7 @@
 name: Grounded Q&A smoke test
 
 # Runs the real pipeline on a GitHub runner: CLIP query encoding + a small
-# local LLM (Ollama llama3.2:1b) answering from retrieved products. Reports
+# local LLM (Ollama llama3.2:3b) answering from retrieved products. Reports
 # how many answers were grounded and how many citations had to be dropped.
 on:
   workflow_dispatch:
@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     env:
-      OLLAMA_MODEL: llama3.2:1b
+      OLLAMA_MODEL: llama3.2:3b
       PVA_CLIP: "1"
     steps:
       - uses: actions/checkout@v4

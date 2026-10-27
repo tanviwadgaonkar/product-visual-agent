@@ -20,10 +20,13 @@ CITE_RE = re.compile(r"\[([A-Z0-9]{10})\]")
 
 SYSTEM = """You are a shopping assistant for a product catalogue.
 Answer ONLY from the PRODUCTS listed in the user message. Each product starts with its ID in square brackets.
-- Cite every product you mention by writing its ID in square brackets, e.g. [B000ABC123].
-- If the products do not answer the question, say so plainly. Never invent products, prices, sizes or stock levels; prices and stock are not in the data.
+- Write full sentences that describe the products (name, colour, material, what makes them different). An answer that is only a list of IDs is wrong.
+- After each product you mention, cite its ID in square brackets.
+- The PRODUCTS are search results and may not match the question. If none of them is the kind of item the user asked for, say "We don't carry that." and cite nothing.
+- Never invent products, prices, sizes or stock levels; prices and stock are not in the data.
 - Keep the answer under 120 words.
-Reply with JSON only: {"answer": "<text with [ID] citations>"}"""
+Reply with JSON only, for example:
+{"answer": "We have two table lamps: the UMI Table Lamp with a fabric shade and wooden base [B000000001], and a polished nickel orb lamp with a black shade [B000000002]."}"""
 
 
 def _describe(p: Product) -> str:
