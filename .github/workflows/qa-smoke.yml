@@ -8,6 +8,10 @@ on:
   push:
     paths: ["backend/qa.py", "scripts/qa_smoke.py", ".github/workflows/qa-smoke.yml"]
 
+# Least privilege: these jobs only read the repository.
+permissions:
+  contents: read
+
 jobs:
   ask:
     runs-on: ubuntu-latest

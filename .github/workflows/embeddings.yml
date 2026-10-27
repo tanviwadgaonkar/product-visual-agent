@@ -7,6 +7,10 @@ on:
   push:
     paths: ["data/abo/products.json", "scripts/embed_catalog.py", ".github/workflows/embeddings.yml"]
 
+# Least privilege: these jobs only read the repository.
+permissions:
+  contents: read
+
 jobs:
   embed:
     runs-on: ubuntu-latest

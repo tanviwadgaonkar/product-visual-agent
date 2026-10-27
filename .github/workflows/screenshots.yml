@@ -7,6 +7,10 @@ on:
   push:
     paths: ["web/**", "scripts/screenshots.py", ".github/workflows/screenshots.yml"]
 
+# Least privilege: these jobs only read the repository.
+permissions:
+  contents: read
+
 jobs:
   shoot:
     runs-on: ubuntu-latest
