@@ -5,6 +5,8 @@ name: Grounded Q&A smoke test
 # how many answers were grounded and how many citations had to be dropped.
 on:
   workflow_dispatch:
+  push:
+    paths: ["backend/qa.py", "scripts/qa_smoke.py", ".github/workflows/qa-smoke.yml"]
 
 jobs:
   ask:
