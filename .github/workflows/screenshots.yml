@@ -1,0 +1,36 @@
+name: Screenshots
+
+# Captures README screenshots from the real app on a GitHub runner
+# (keyword search + precomputed CLIP similarity; no LLM needed).
+on:
+  workflow_dispatch:
+  push:
+    paths: ["web/**", "scripts/screenshots.py", ".github/workflows/screenshots.yml"]
+
+jobs:
+  shoot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: cd web && (if [ -f package-lock.json ]; then npm ci; else npm install; fi) && npm run build
+      - run: pip install -r requirements.txt playwright && python -m playwright install --with-deps chromium
+      - name: Start the API and capture
+        env:
+          PVA_DATA_DIR: /tmp/pva
+        run: |
+          uvicorn backend.main:app --port 8000 > /tmp/api.log 2>&1 &
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:8000/api/v2/capabilities && break; sleep 2; done
+          python scripts/screenshots.py http://127.0.0.1:8000/app/ docs/screenshots
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screenshots
+          path: docs/screenshots

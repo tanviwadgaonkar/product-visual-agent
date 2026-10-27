@@ -49,6 +49,9 @@ app = FastAPI(title="Product Visual Agent", version="0.3.0", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=FRONTEND), name="static")
 app.mount("/images", StaticFiles(directory=ABO_DIR / "images"), name="images")
 app.include_router(api_v2.router)
+WEB_DIST = ROOT / "web" / "dist"
+if WEB_DIST.exists():  # the React app, after `npm run build` in web/
+    app.mount("/app", StaticFiles(directory=WEB_DIST, html=True), name="app")
 app.add_exception_handler(api_v2.APIError, api_v2.api_error_handler)
 app.add_exception_handler(RequestValidationError, api_v2.validation_handler)
 

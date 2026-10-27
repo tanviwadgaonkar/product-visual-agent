@@ -3,13 +3,51 @@ name: CI
 on: [push, pull_request]
 
 jobs:
-  test:
+  backend:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
           cache: pip
       - run: pip install -r requirements-dev.txt
       - run: pytest -q
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      # npm ci once package-lock.json is committed; npm install before that.
+      - run: if [ -f package-lock.json ]; then npm ci; else npm install; fi
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-build
+          path: |
+            web/dist
+            web/package-lock.json
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t pva .
+      - name: Smoke test the container
+        run: |
+          docker run -d -p 8000:8000 --name pva pva
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:8000/api/v2/capabilities && break; sleep 2; done
+          curl -sf "http://127.0.0.1:8000/api/v2/products?q=table+lamp&page_size=2" | python3 -m json.tool | head -20
+          curl -sf http://127.0.0.1:8000/app/ | grep -q '<div id="root">'
+          docker logs pva | tail -5
